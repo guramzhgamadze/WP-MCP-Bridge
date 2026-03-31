@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WP MCP Bridge — Connect WordPress to Claude.ai</title>
+<meta name="description" content="Give Claude.ai real-time read access to your WordPress site via the Model Context Protocol. Plugins, database, source code, ACF fields, and more.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* ── TOKENS ─────────────────────────────────────────── */
+  :root {
+    --bg:        #080b12;
+    --surface:   #0e1219;
+    --surface2:  #141926;
+    --border:    #1e2736;
+    --accent:    #ff7a3d;
+    --accent2:   #ffb347;
+    --blue:      #4d9fff;
+    --green:     #3ddc84;
+    --muted:     #5a6a84;
+    --text:      #d4ddf0;
+    --texthi:    #f0f4ff;
+    --font-ui:   'Syne', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --radius:    10px;
+    --glow:      0 0 40px rgba(255,122,61,.18);
+  }
+
+  /* ── RESET ──────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-ui);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent2); }
+
+  /* ── GRID BG ────────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(255,122,61,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,122,61,.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* ── NAV ────────────────────────────────────────────── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(8,11,18,.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 0;
+  }
+  nav .inner {
+    max-width: 1100px; margin: 0 auto; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: relative; z-index: 1;
+  }
+  .nav-logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 15px; font-weight: 700; color: var(--texthi); letter-spacing: .02em;
+  }
+  .nav-logo-icon {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; color: #fff;
+  }
+  .nav-links { display: flex; align-items: center; gap: 28px; }
+  .nav-links a { font-size: 14px; font-weight: 600; color: var(--muted); transition: color .2s; }
+  .nav-links a:hover { color: var(--texthi); }
+  .nav-github {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--texthi) !important; padding: 7px 14px; border-radius: 7px;
+    font-size: 13px; font-weight: 600; transition: border-color .2s, background .2s;
+  }
+  .nav-github:hover { border-color: var(--accent) !important; background: var(--surface) !important; }
+
+  /* ── HERO ────────────────────────────────────────────── */
+  .hero {
+    padding: 100px 0 80px;
+    text-align: center;
+    position: relative;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,122,61,.1); border: 1px solid rgba(255,122,61,.3);
+    color: var(--accent); padding: 6px 14px; border-radius: 100px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+    margin-bottom: 28px;
+    animation: fadeUp .5s ease both;
+  }
+  .hero-badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .hero h1 {
+    font-size: clamp(44px, 7vw, 88px);
+    font-weight: 800;
+    line-height: .95;
+    letter-spacing: -.03em;
+    color: var(--texthi);
+    margin-bottom: 24px;
+    animation: fadeUp .5s .1s ease both;
+  }
+  .hero h1 span {
+    background: linear-gradient(120deg, var(--accent), var(--accent2) 60%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero-sub {
+    font-size: clamp(15px, 2.2vw, 19px);
+    color: var(--muted);
+    max-width: 560px; margin: 0 auto 40px;
+    line-height: 1.7;
+    animation: fadeUp .5s .2s ease both;
+  }
+  .hero-ctas {
+    display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+    animation: fadeUp .5s .3s ease both;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 26px; border-radius: 9px;
+    font-family: var(--font-ui); font-size: 15px; font-weight: 700;
+    cursor: pointer; transition: all .2s; border: none;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #e06020);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(255,122,61,.35);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,122,61,.45); color: #fff; }
+  .btn-secondary {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--texthi);
+  }
+  .btn-secondary:hover { border-color: var(--muted); color: var(--texthi); transform: translateY(-2px); }
+
+  /* ── TERMINAL DEMO ───────────────────────────────────── */
+  .terminal-wrap {
+    margin: 64px auto 0;
+    max-width: 740px;
+    animation: fadeUp .5s .4s ease both;
+  }
+  .terminal {
+    background: #0c1018;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,.6), var(--glow);
+  }
+  .terminal-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 13px 16px;
+    background: #0e1420;
+    border-bottom: 1px solid var(--border);
+  }
+  .terminal-bar .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .terminal-bar .dot.r { background: #ff5f57; }
+  .terminal-bar .dot.y { background: #ffbd2e; }
+  .terminal-bar .dot.g { background: #28c840; }
+  .terminal-bar .title {
+    flex: 1; text-align: center;
+    font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+  }
+  .terminal-body {
+    padding: 22px 24px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 2;
+    color: #a0b0cc;
+  }
+  .terminal-body .prompt { color: var(--accent); }
+  .terminal-body .cmd { color: var(--texthi); }
+  .terminal-body .comment { color: var(--muted); }
+  .terminal-body .key { color: var(--blue); }
+  .terminal-body .val { color: var(--green); }
+  .terminal-body .dim { color: var(--muted); font-size: 11px; }
+  .cursor {
+    display: inline-block; width: 8px; height: 14px;
+    background: var(--accent); vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ── STATS ───────────────────────────────────────────── */
+  .stats {
+    padding: 40px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+  }
+  .stat {
+    padding: 24px 32px;
+    border-right: 1px solid var(--border);
+    text-align: center;
+    animation: fadeUp .5s ease both;
+  }
+  .stat:last-child { border-right: none; }
+  .stat-num {
+    font-size: 40px; font-weight: 800; line-height: 1;
+    background: linear-gradient(120deg, var(--texthi), var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; font-weight: 600; }
+
+  /* ── SECTIONS ────────────────────────────────────────── */
+  section { padding: 88px 0; }
+  .section-tag {
+    display: inline-block;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h2 {
+    font-size: clamp(28px, 4vw, 44px);
+    font-weight: 800; line-height: 1.1;
+    letter-spacing: -.02em; color: var(--texthi);
+    margin-bottom: 14px;
+  }
+  .section-lead {
+    font-size: 17px; color: var(--muted); max-width: 540px; line-height: 1.7;
+  }
+
+  /* ── HOW IT WORKS ────────────────────────────────────── */
+  .steps {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+    margin-top: 56px; position: relative;
+  }
+  .steps::before {
+    content: '';
+    position: absolute; top: 36px; left: calc(33.33% + 20px); right: calc(33.33% + 20px);
+    height: 1px; border-top: 1px dashed var(--border); z-index: 0;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 32px 28px;
+    border-radius: var(--radius);
+    position: relative; z-index: 1;
+    transition: border-color .25s, transform .25s;
+  }
+  .step:hover { border-color: var(--accent); transform: translateY(-4px); }
+  .step-num {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), #e06020);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: #fff;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 16px rgba(255,122,61,.3);
+  }
+  .step h3 { font-size: 18px; font-weight: 700; color: var(--texthi); margin-bottom: 10px; }
+  .step p { font-size: 14px; color: var(--muted); line-height: 1.7; }
+  .step code {
+    font-family: var(--font-mono); font-size: 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 2px 7px; border-radius: 4px; color: var(--blue);
+    display: inline-block; margin-top: 10px;
+  }
+
+  /* ── TOOLS ───────────────────────────────────────────── */
+  #tools { background: linear-gradient(180deg, transparent 0, var(--surface) 40px, var(--surface) calc(100% - 40px), transparent 100%); }
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-top: 56px;
+  }
+  .tool-card {
+    background: var(--surface);
+    padding: 22px 24px;
+    transition: background .2s;
+    position: relative;
+  }
+  .tool-card:hover { background: var(--surface2); }
+  .tool-name {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+    color: var(--blue); margin-bottom: 8px;
+  }
+  .tool-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .tool-badge {
+    position: absolute; top: 14px; right: 16px;
+    font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 7px; border-radius: 4px;
+    background: rgba(61,220,132,.1); color: var(--green); border: 1px solid rgba(61,220,132,.2);
+  }
+
+  /* ── SECURITY ────────────────────────────────────────── */
+  .security-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;
+    margin-top: 56px;
+  }
+  .sec-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    transition: border-color .2s;
+  }
+  .sec-card:hover { border-color: var(--accent); }
+  .sec-icon { font-size: 28px; margin-bottom: 14px; }
+  .sec-card h3 { font-size: 16px; font-weight: 700; color: var(--texthi); margin-bottom: 10px; }
+  .sec-card ul { list-style: none; }
+  .sec-card ul li {
+    font-size: 13px; color: var(--muted); padding: 5px 0;
+    display: flex; align-items: flex-start; gap: 8px; line-height: 1.5;
+  }
+  .sec-card ul li::before { content: '→'; color: var(--green); flex-shrink: 0; margin-top: 1px; }
+
+  /* ── QUICKSTART ───────────────────────────────────────── */
+  .quickstart-tabs {
+    display: flex; gap: 2px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px 10px 0 0; padding: 6px;
+    margin-top: 56px;
+  }
+  .tab-btn {
+    padding: 8px 18px; border-radius: 7px;
+    font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    color: var(--muted); cursor: pointer; border: none; background: transparent;
+    transition: all .18s;
+  }
+  .tab-btn.active { background: var(--surface); color: var(--texthi); border: 1px solid var(--border); }
+  .code-block {
+    background: #0c1018;
+    border: 1px solid var(--border); border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 28px 28px;
+    font-family: var(--font-mono); font-size: 13px; line-height: 2;
+    overflow-x: auto; display: none;
+  }
+  .code-block.active { display: block; }
+  .code-block .kw { color: #f08d49; }
+  .code-block .str { color: var(--green); }
+  .code-block .cmt { color: var(--muted); }
+  .code-block .fn { color: var(--blue); }
+  .code-block .num { color: #f08d49; }
+  .copy-btn {
+    float: right;
+    font-family: var(--font-ui); font-size: 12px; font-weight: 600;
+    color: var(--muted); background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 5px 12px; cursor: pointer; transition: all .2s;
+    margin-top: -4px;
+  }
+  .copy-btn:hover { color: var(--texthi); border-color: var(--muted); }
+
+  /* ── OAUTH FLOW ───────────────────────────────────────── */
+  .flow-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px;
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr;
+    gap: 0;
+    align-items: start;
+  }
+  .flow-col { }
+  .flow-col-label {
+    font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--muted); text-align: center;
+    padding-bottom: 16px; border-bottom: 2px solid var(--border); margin-bottom: 0;
+  }
+  .flow-col-label.left { text-align: left; }
+  .flow-col-label.right { text-align: right; }
+  .flow-col-label span {
+    display: inline-block; padding: 4px 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--texthi); font-size: 12px; font-weight: 600;
+  }
+  .flow-center { display: flex; flex-direction: column; align-items: center; padding-top: 0; }
+  .flow-line { width: 2px; background: var(--border); flex: 1; min-height: 40px; }
+  .flow-arrow { color: var(--accent); font-size: 20px; line-height: 1; }
+  .flow-row {
+    display: grid; grid-template-columns: 1fr 60px 1fr;
+    gap: 0; align-items: center; min-height: 60px;
+  }
+  .flow-msg {
+    font-family: var(--font-mono); font-size: 12px;
+    padding: 8px 12px; border-radius: 7px; line-height: 1.5;
+  }
+  .flow-msg.send {
+    background: rgba(77,159,255,.08); border: 1px solid rgba(77,159,255,.2);
+    color: var(--blue); text-align: right; margin-right: 8px;
+  }
+  .flow-msg.recv {
+    background: rgba(61,220,132,.08); border: 1px solid rgba(61,220,132,.2);
+    color: var(--green); margin-left: 8px;
+  }
+  .flow-msg.empty { opacity: 0; }
+  .flow-divider {
+    grid-column: 1 / -1; height: 1px; background: var(--border);
+    margin: 4px 0;
+  }
+
+  /* ── CHANGELOG ───────────────────────────────────────── */
+  .changelog {
+    margin-top: 56px; display: grid; grid-template-columns: 200px 1fr; gap: 40px;
+  }
+  .changelog-versions { position: relative; }
+  .v-item {
+    padding: 14px 0; cursor: pointer; border-left: 2px solid var(--border);
+    padding-left: 20px; transition: border-color .2s;
+  }
+  .v-item.active { border-color: var(--accent); }
+  .v-num { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--texthi); }
+  .v-date { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .v-badge {
+    font-size: 10px; font-family: var(--font-mono);
+    padding: 2px 7px; border-radius: 4px; margin-left: 8px;
+    background: rgba(255,122,61,.15); color: var(--accent);
+  }
+  .changelog-content { }
+  .v-panel { display: none; }
+  .v-panel.active { display: block; }
+  .v-panel h3 { font-size: 22px; font-weight: 800; color: var(--texthi); margin-bottom: 20px; }
+  .bug-item {
+    display: flex; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid var(--border); align-items: flex-start;
+  }
+  .bug-sev {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 4px; white-space: nowrap; margin-top: 2px; flex-shrink: 0;
+  }
+  .sev-critical { background: rgba(255,80,80,.15); color: #ff6060; border: 1px solid rgba(255,80,80,.2); }
+  .sev-high     { background: rgba(255,160,60,.15); color: #ffa040; border: 1px solid rgba(255,160,60,.2); }
+  .sev-medium   { background: rgba(255,210,60,.1); color: #ffd040; border: 1px solid rgba(255,210,60,.2); }
+  .sev-low      { background: rgba(100,200,100,.1); color: #80d080; border: 1px solid rgba(100,200,100,.2); }
+  .bug-text { font-size: 13px; color: var(--text); line-height: 1.6; }
+  .bug-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ── FOOTER ──────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 48px 0;
+    text-align: center;
+  }
+  .footer-logo { font-size: 22px; font-weight: 800; color: var(--texthi); margin-bottom: 12px; }
+  .footer-logo span { color: var(--accent); }
+  .footer-links { display: flex; justify-content: center; gap: 24px; margin-bottom: 24px; }
+  .footer-links a { font-size: 13px; color: var(--muted); transition: color .2s; }
+  .footer-links a:hover { color: var(--texthi); }
+  .footer-copy { font-size: 12px; color: var(--muted); }
+
+  /* ── ANIMATIONS ──────────────────────────────────────── */
+  @keyframes fadeUp { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform: translateY(0); } }
+
+  [data-reveal] {
+    opacity: 0; transform: translateY(24px);
+    transition: opacity .6s ease, transform .6s ease;
+  }
+  [data-reveal].visible { opacity: 1; transform: translateY(0); }
+
+  /* ── RESPONSIVE ──────────────────────────────────────── */
+  @media (max-width: 820px) {
+    .steps { grid-template-columns: 1fr; }
+    .steps::before { display: none; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .stat { border-right: none; border-bottom: 1px solid var(--border); }
+    .stat:nth-child(odd) { border-right: 1px solid var(--border); }
+    .security-grid { grid-template-columns: 1fr; }
+    .changelog { grid-template-columns: 1fr; }
+    .changelog-versions { display: flex; gap: 0; overflow-x: auto; }
+    .v-item { border-left: none; border-bottom: 2px solid var(--border); padding: 10px 16px; white-space: nowrap; }
+    .v-item.active { border-bottom-color: var(--accent); border-left: none; }
+    .flow-diagram { display: block; }
+    .flow-row { grid-template-columns: 1fr 40px 1fr; }
+    nav .inner { gap: 16px; }
+    .nav-links a:not(.nav-github) { display: none; }
+  }
+  @media (max-width: 480px) {
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .hero-ctas { flex-direction: column; }
+    .btn { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="inner">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">W</div>
+      WP MCP Bridge
+    </div>
+    <div class="nav-links">
+      <a href="#tools">Tools</a>
+      <a href="#security">Security</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="#changelog">Changelog</a>
+      <a href="https://github.com/guramzhgamadze/WP-MCP-Bridge" class="nav-github" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="container">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      v2.6.0 · MCP Spec 2025-06-18 · OAuth 2.1 PKCE
+    </div>
+    <h1>WordPress meets<br><span>Claude.ai</span></h1>
+    <p class="hero-sub">
+      Give Claude real-time read access to your WordPress site via the Model Context Protocol —
+      so it can write plugins that actually fit your setup.
+    </p>
+    <div class="hero-ctas">
+      <a href="https://github.com/guramzhgamadze/WP-MCP-Bridge/archive/refs/heads/main.zip" class="btn btn-primary" target="_blank" rel="noopener">
+        ↓ Download Plugin
+      </a>
+      <a href="#quickstart" class="btn btn-secondary">
+        Quick Start →
+      </a>
+      <a href="README.md" class="btn btn-secondary">
+        Documentation
+      </a>
+    </div>
+
+    <!-- TERMINAL -->
+    <div class="terminal-wrap">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <span class="dot r"></span>
+          <span class="dot y"></span>
+          <span class="dot g"></span>
+          <span class="title">mcp · wp-json/mcp/v1/bridge</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="prompt">$</span> <span class="cmd">curl -X POST https://your-site.com/wp-json/mcp/v1/bridge \</span></div>
+          <div><span class="key">&nbsp;&nbsp;-H</span> <span class="val">"Authorization: Bearer &lt;token&gt;"</span> <span class="key">-H</span> <span class="val">"Content-Type: application/json"</span> <span class="key">\</span></div>
+          <div><span class="key">&nbsp;&nbsp;-d</span> <span class="val">'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'</span></div>
+          <div>&nbsp;</div>
+          <div class="comment"># ✓ 200 OK · MCP-Protocol-Version: 2025-06-18</div>
+          <div><span class="key">{</span> <span class="str">"jsonrpc"</span>: <span class="val">"2.0"</span>, <span class="str">"id"</span>: <span class="val">1</span>, <span class="str">"result"</span>: <span class="key">{</span></div>
+          <div>&nbsp;&nbsp;<span class="str">"protocolVersion"</span>: <span class="val">"2025-06-18"</span>,</div>
+          <div>&nbsp;&nbsp;<span class="str">"serverInfo"</span>: <span class="key">{ </span><span class="str">"name"</span>: <span class="val">"wordpress-mcp-bridge"</span>, <span class="str">"version"</span>: <span class="val">"2.6.0"</span> <span class="key">}</span>,</div>
+          <div>&nbsp;&nbsp;<span class="str">"capabilities"</span>: <span class="key">{ </span><span class="str">"tools"</span>: <span class="key">{ </span><span class="str">"listChanged"</span>: <span class="val">false</span> <span class="key">} }</span></div>
+          <div><span class="key">}}</span></div>
+          <div>&nbsp;</div>
+          <div><span class="prompt">$</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat" data-reveal>
+        <div class="stat-num">19</div>
+        <div class="stat-label">MCP Tools</div>
+      </div>
+      <div class="stat" data-reveal style="transition-delay:.08s">
+        <div class="stat-num">35+</div>
+        <div class="stat-label">Bugs Fixed</div>
+      </div>
+      <div class="stat" data-reveal style="transition-delay:.16s">
+        <div class="stat-num">2.1</div>
+        <div class="stat-label">OAuth Spec</div>
+      </div>
+      <div class="stat" data-reveal style="transition-delay:.24s">
+        <div class="stat-num">8.0+</div>
+        <div class="stat-label">PHP Required</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="container">
+    <div data-reveal>
+      <div class="section-tag">How it works</div>
+      <h2>Three steps to connect</h2>
+      <p class="section-lead">Install the plugin, grab your token or complete the OAuth flow, and Claude.ai can immediately read your site's internals.</p>
+    </div>
+    <div class="steps">
+      <div class="step" data-reveal>
+        <div class="step-num">1</div>
+        <h3>Install & Activate</h3>
+        <p>Upload the plugin to <code>wp-content/plugins/</code> and activate it. A Bearer token is generated automatically on first activation.</p>
+        <code>Settings → Permalinks → Save</code>
+      </div>
+      <div class="step" data-reveal style="transition-delay:.1s">
+        <div class="step-num">2</div>
+        <h3>Connect Claude.ai</h3>
+        <p>Add a custom connector in Claude.ai settings. Paste your MCP endpoint URL and choose Bearer Token or complete the OAuth 2.1 flow.</p>
+        <code>Profile → Connectors → Add custom</code>
+      </div>
+      <div class="step" data-reveal style="transition-delay:.2s">
+        <div class="step-num">3</div>
+        <h3>Ask Claude Anything</h3>
+        <p>Claude can now inspect your plugins, database schema, ACF fields, source code, error logs, and more — in real time.</p>
+        <code>19 read-only tools available</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TOOLS -->
+<section id="tools">
+  <div class="container">
+    <div data-reveal>
+      <div class="section-tag">MCP Tools</div>
+      <h2>Everything Claude needs to know</h2>
+      <p class="section-lead">19 read-only tools give Claude a complete picture of your site. Nothing is written, deleted, or modified — ever.</p>
+    </div>
+    <div class="tools-grid" data-reveal>
+      <div class="tool-card">
+        <div class="tool-badge">INFO</div>
+        <div class="tool-name">wp_get_site_info</div>
+        <div class="tool-desc">WP/PHP/MySQL versions, active theme, all plugins, debug settings, upload directories, memory limits.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">INFO</div>
+        <div class="tool-name">wp_get_plugins</div>
+        <div class="tool-desc">All installed plugins with name, version, author, description, and active/inactive status.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">INFO</div>
+        <div class="tool-name">wp_get_themes</div>
+        <div class="tool-desc">All themes with version, author, parent theme info, and active state.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">SCHEMA</div>
+        <div class="tool-name">wp_get_post_types</div>
+        <div class="tool-desc">All post types — labels, supports, taxonomies, REST base, and live post counts.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">SCHEMA</div>
+        <div class="tool-name">wp_get_taxonomies</div>
+        <div class="tool-desc">All taxonomies with object types, REST settings, and term counts.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">CONFIG</div>
+        <div class="tool-name">wp_get_options</div>
+        <div class="tool-desc">WordPress options reader. Credentials and API keys are always redacted.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">DATA</div>
+        <div class="tool-name">wp_query_posts</div>
+        <div class="tool-desc">Query any post type via WP_Query. Returns post data, all meta fields, and taxonomy terms.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">DB</div>
+        <div class="tool-name">wp_get_db_schema</div>
+        <div class="tool-desc">All database tables with column names, types, and live row counts.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">DB</div>
+        <div class="tool-name">wp_db_query</div>
+        <div class="tool-desc">Run SELECT queries. Credential columns and SELECT * on wp_users are permanently blocked.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">FILES</div>
+        <div class="tool-name">wp_list_files</div>
+        <div class="tool-desc">List files in any wp-content subdirectory, filtered by extension. Capped at 2000 results.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">FILES</div>
+        <div class="tool-name">wp_read_file</div>
+        <div class="tool-desc">Read source code of any file inside wp-content. Max 512 KB per read.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">DEBUG</div>
+        <div class="tool-name">wp_get_logs</div>
+        <div class="tool-desc">Read debug.log or the PHP error log. Returns the last N lines (up to 1000).</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">CODE</div>
+        <div class="tool-name">wp_get_hooks</div>
+        <div class="tool-desc">Inspect $wp_filter — all registered actions and filters with priorities and callback names.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">ACF</div>
+        <div class="tool-name">wp_get_acf_fields</div>
+        <div class="tool-desc">All ACF field groups and field definitions. Requires ACF plugin to be active.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">USERS</div>
+        <div class="tool-name">wp_get_users</div>
+        <div class="tool-desc">List users with roles. Passwords are never returned under any circumstances.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">UI</div>
+        <div class="tool-name">wp_get_menus</div>
+        <div class="tool-desc">All navigation menus, assigned locations, and menu items with full hierarchy.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">CRON</div>
+        <div class="tool-name">wp_get_cron_jobs</div>
+        <div class="tool-desc">All scheduled WP cron events with next run times, schedules, intervals, and args.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">UI</div>
+        <div class="tool-name">wp_get_active_widgets</div>
+        <div class="tool-desc">Active widget areas and all widgets assigned to each area with their settings.</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-badge">API</div>
+        <div class="tool-name">wp_get_rest_routes</div>
+        <div class="tool-desc">All registered REST API routes with HTTP methods and namespaces.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECURITY -->
+<section id="security">
+  <div class="container">
+    <div data-reveal>
+      <div class="section-tag">Security</div>
+      <h2>Hardened at every layer</h2>
+      <p class="section-lead">Read-only by design, with defense-in-depth across authentication, file access, database, and the OAuth flow.</p>
+    </div>
+    <div class="security-grid">
+      <div class="sec-card" data-reveal>
+        <div class="sec-icon">🔐</div>
+        <h3>Authentication</h3>
+        <ul>
+          <li>Tokens validated with <code>hash_equals()</code> — no timing attacks</li>
+          <li>API key stored with <code>autoload = false</code></li>
+          <li>OAuth access tokens expire after 1 hour</li>
+          <li>Auth codes are single-use, expire in 10 minutes</li>
+          <li>PKCE S256 mandatory — plain challenges rejected</li>
+          <li>Bearer token blocked from <code>wp_get_options</code> tool</li>
+        </ul>
+      </div>
+      <div class="sec-card" data-reveal style="transition-delay:.1s">
+        <div class="sec-icon">📁</div>
+        <h3>File Access</h3>
+        <ul>
+          <li>All paths resolved with <code>realpath()</code></li>
+          <li>Separator-aware containment check — no sibling-dir bypass</li>
+          <li>All reads contained within <code>wp-content</code></li>
+          <li>Log paths validated against allowlist of safe roots</li>
+          <li><code>realpath()</code> returning <code>false</code> treated as access denied</li>
+        </ul>
+      </div>
+      <div class="sec-card" data-reveal style="transition-delay:.2s">
+        <div class="sec-icon">🗄️</div>
+        <h3>Database</h3>
+        <ul>
+          <li>Only <code>SELECT</code> queries allowed — enforced by regex</li>
+          <li><code>user_pass</code> and <code>user_activation_key</code> always blocked</li>
+          <li><code>SELECT * FROM wp_users</code> permanently blocked</li>
+          <li>Query results capped at 200 rows</li>
+          <li>Rate limited to 120 tool calls/minute per IP</li>
+        </ul>
+      </div>
+      <div class="sec-card" data-reveal style="transition-delay:.3s">
+        <div class="sec-icon">🌐</div>
+        <h3>Network &amp; OAuth</h3>
+        <ul>
+          <li>CORS scoped to <code>claude.ai</code> origins only</li>
+          <li>DNS rebinding protection via per-request origin check</li>
+          <li>Clickjacking blocked: <code>X-Frame-Options: DENY</code></li>
+          <li><code>Content-Security-Policy: frame-ancestors 'none'</code></li>
+          <li>Apache/FastCGI auth header normalization built in</li>
+          <li>Two-nonce form prevents <code>rest_cookie_invalid_nonce</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUICKSTART -->
+<section id="quickstart">
+  <div class="container">
+    <div data-reveal>
+      <div class="section-tag">Quick Start</div>
+      <h2>Up and running in minutes</h2>
+      <p class="section-lead">Two connection methods — pick the one that fits your workflow.</p>
+    </div>
+    <div class="quickstart-tabs" data-reveal>
+      <button class="tab-btn active" onclick="switchTab('bearer')">Option A — Bearer Token</button>
+      <button class="tab-btn" onclick="switchTab('oauth')">Option B — OAuth 2.1</button>
+      <button class="tab-btn" onclick="switchTab('git')">Install from Git</button>
+    </div>
+    <div class="code-block active" id="tab-bearer">
+      <button class="copy-btn" onclick="copyCode('tab-bearer')">Copy</button>
+      <div>
+        <span class="cmt"># 1. Find your endpoint and token in WordPress Admin</span>
+      </div>
+      <div>
+        &nbsp;&nbsp;<span class="cmt">Settings → MCP Bridge → copy the Bearer Token</span>
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># 2. Test the connection manually</span>
+      </div>
+      <div>
+        <span class="fn">curl</span> -s -X <span class="kw">POST</span> https://your-site.com/wp-json/mcp/v1/bridge \
+      </div>
+      <div>
+        &nbsp;&nbsp;-H <span class="str">"Authorization: Bearer YOUR_TOKEN"</span> \
+      </div>
+      <div>
+        &nbsp;&nbsp;-H <span class="str">"Content-Type: application/json"</span> \
+      </div>
+      <div>
+        &nbsp;&nbsp;-d <span class="str">'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'</span>
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># 3. In Claude.ai → Profile → Settings → Connectors → Add custom connector</span>
+      </div>
+      <div>
+        &nbsp;&nbsp;<span class="kw">MCP URL</span>:  https://your-site.com/wp-json/mcp/v1/bridge
+      </div>
+      <div>
+        &nbsp;&nbsp;<span class="kw">Auth type</span>: Bearer Token
+      </div>
+      <div>
+        &nbsp;&nbsp;<span class="kw">Token</span>:     &lt;paste from Settings → MCP Bridge&gt;
+      </div>
+    </div>
+    <div class="code-block" id="tab-oauth">
+      <button class="copy-btn" onclick="copyCode('tab-oauth')">Copy</button>
+      <div>
+        <span class="cmt"># Claude.ai auto-discovers OAuth via well-known endpoints.</span>
+      </div>
+      <div>
+        <span class="cmt"># If you need to enter OAuth details manually:</span>
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="kw">Authorization URL</span>:  https://your-site.com/wp-json/mcp/v1/oauth/authorize
+      </div>
+      <div>
+        <span class="kw">Token URL</span>:          https://your-site.com/wp-json/mcp/v1/oauth/token
+      </div>
+      <div>
+        <span class="kw">Client ID</span>:          claude.ai  <span class="cmt"># any value — NOT "Bearer Token"</span>
+      </div>
+      <div>
+        <span class="kw">Scopes</span>:             claudeai
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># Auto-discovery URLs (Claude.ai fetches these automatically):</span>
+      </div>
+      <div>
+        &nbsp;&nbsp;https://your-site.com/.well-known/oauth-authorization-server
+      </div>
+      <div>
+        &nbsp;&nbsp;https://your-site.com/.well-known/oauth-protected-resource
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># After saving, Claude.ai opens a WP login → click "Allow Access"</span>
+      </div>
+    </div>
+    <div class="code-block" id="tab-git">
+      <button class="copy-btn" onclick="copyCode('tab-git')">Copy</button>
+      <div>
+        <span class="cmt"># Clone into your plugins directory</span>
+      </div>
+      <div>
+        <span class="fn">cd</span> /path/to/wp-content/plugins
+      </div>
+      <div>
+        <span class="fn">git</span> clone https://github.com/guramzhgamadze/WP-MCP-Bridge.git wp-mcp-bridge
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># Or download the latest release zip and upload via WP Admin</span>
+      </div>
+      <div>
+        &nbsp;&nbsp;Plugins → Add New → Upload Plugin → activate
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># After activation, flush rewrites</span>
+      </div>
+      <div>
+        &nbsp;&nbsp;Settings → Permalinks → Save Changes
+      </div>
+      <div>&nbsp;</div>
+      <div>
+        <span class="cmt"># Add to wp-config.php for debug logging (optional)</span>
+      </div>
+      <div>
+        <span class="fn">define</span>(<span class="str">'WP_DEBUG'</span>, <span class="kw">true</span>);
+      </div>
+      <div>
+        <span class="fn">define</span>(<span class="str">'WP_DEBUG_LOG'</span>, <span class="kw">true</span>);
+      </div>
+      <div>
+        <span class="fn">define</span>(<span class="str">'WP_DEBUG_DISPLAY'</span>, <span class="kw">false</span>);
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CHANGELOG -->
+<section id="changelog">
+  <div class="container">
+    <div data-reveal>
+      <div class="section-tag">Changelog</div>
+      <h2>Built with obsessive care</h2>
+      <p class="section-lead">Every bug is documented with root cause, source reference, and precise fix. No handwaving.</p>
+    </div>
+    <div class="changelog" data-reveal>
+      <div class="changelog-versions">
+        <div class="v-item active" onclick="switchVersion('v260')">
+          <div class="v-num">v2.6.0 <span class="v-badge">LATEST</span></div>
+          <div class="v-date">Mar 2026</div>
+        </div>
+        <div class="v-item" onclick="switchVersion('v250')">
+          <div class="v-num">v2.5.0</div>
+          <div class="v-date">Feb 2026</div>
+        </div>
+        <div class="v-item" onclick="switchVersion('v240')">
+          <div class="v-num">v2.4.0</div>
+          <div class="v-date">Jan 2026</div>
+        </div>
+        <div class="v-item" onclick="switchVersion('v230')">
+          <div class="v-num">v2.3.0</div>
+          <div class="v-date">Dec 2025</div>
+        </div>
+        <div class="v-item" onclick="switchVersion('v210')">
+          <div class="v-num">v2.1–2.2</div>
+          <div class="v-date">Nov 2025</div>
+        </div>
+      </div>
+      <div class="changelog-content">
+
+        <div class="v-panel active" id="v260">
+          <h3>v2.6.0 — 5 bugs fixed</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div>
+              <div class="bug-text"><strong>BUG-35:</strong> <code>rest_cookie_invalid_nonce</code> 403 when clicking "Allow Access". WordPress REST cookie auth validated <code>_wpnonce</code> as a <code>wp_rest</code> nonce before the handler ran — our consent nonce failed this check. Fixed with a two-nonce form: <code>_wpnonce</code> satisfies WP REST auth, <code>_mcp_nonce</code> is our CSRF check.</div>
+            </div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div>
+              <div class="bug-text"><strong>BUG-31:</strong> <code>wp_get_options</code> could expose the plugin's own Bearer token. An authenticated Claude session could call the tool with <code>keys:['wp_mcp_bridge_api_key']</code> and receive the credential it used to authenticate. Plugin's own options are now permanently blocked.</div>
+            </div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div>
+              <div class="bug-text"><strong>BUG-32:</strong> <code>_get_cron_array()</code> returns <code>false</code> on corrupt cron data. <code>foreach(false)</code> emits E_WARNING on PHP 8.0/8.1 and TypeError on PHP 8.2+, crashing the cron tool. Fixed with <code>_get_cron_array() ?: []</code>.</div>
+            </div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div>
+              <div class="bug-text"><strong>BUG-33:</strong> Unused <code>$resp_types</code> variable in the DCR handler caused PHP notices and created a latent risk of accidentally relying on an unchecked user-supplied value.</div>
+            </div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-low">LOW</span>
+            <div>
+              <div class="bug-text"><strong>BUG-34:</strong> OAuth transients (<code>wpmcp_code_*</code>, <code>wpmcp_token_*</code>, <code>wpmcp_rate_*</code>) were not cleaned up on plugin deactivation, leaving orphaned rows in <code>wp_options</code>.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="v-panel" id="v250">
+          <h3>v2.5.0 — 5 bugs fixed</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-26:</strong> Missing <code>registration_endpoint</code> in Authorization Server Metadata. Claude Code fails with "does not support dynamic client registration" without it. Full RFC 7591 DCR endpoint added.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-27:</strong> Plugin declared <code>Requires PHP: 7.4</code> but used union types and <code>str_starts_with()</code> — PHP 8.0+ only features. Fatal parse error on PHP 7.4. Header corrected to <code>8.0</code>.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-28:</strong> <code>realpath()</code> returning <code>false</code> bypassed the entire path containment guard. <code>str_starts_with($full, false . '/')</code> is always <code>true</code>, allowing any file on the filesystem to be read.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-29:</strong> <code>register_setting()</code> only hooked to <code>admin_init</code>. WordPress docs require both <code>admin_init</code> and <code>rest_api_init</code> for the sanitize callback to apply on REST API updates.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-30:</strong> <code>array_filter($params)</code> stripped legitimate empty-string OAuth params. State and scope can be empty strings; removing them breaks CSRF protection and scope handling.</div></div>
+          </div>
+        </div>
+
+        <div class="v-panel" id="v240">
+          <h3>v2.4.0 — 6 bugs fixed</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-20:</strong> <code>do_action('rest_api_init')</code> inside a tool callback double-fired every hook in the system, causing duplicate route warnings and third-party side effects.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-21:</strong> <code>strncmp</code> prefix check bypassed by sibling directories. <code>/wp-content-evil/</code> matches <code>/wp-content</code> prefix. Fixed with separator-aware <code>str_starts_with($full, $base . DIRECTORY_SEPARATOR)</code>.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-22:</strong> N+1 DB queries in <code>wp_get_users</code> — <code>get_userdata()</code> called per user in a loop. On 200 users = 200 extra queries. Fixed by removing <code>'fields'</code> restriction to get full WP_User objects.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-23:</strong> <code>$client_display</code> mixing raw HTML and escaped text in one variable, echoed without escaping — flagged by all WP security scanners as an XSS risk.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-24:</strong> OAuth consent page missing <code>X-Frame-Options</code>. RFC 6749 §10.13 requires clickjacking prevention on authorization endpoints. Headers <code>X-Frame-Options: DENY</code> and <code>frame-ancestors 'none'</code> added.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-25:</strong> Authorization header stripped on Apache + FastCGI — auth always failed even with valid tokens. Normalization from <code>REDIRECT_HTTP_AUTHORIZATION</code> and <code>apache_request_headers()</code> now runs at <code>init</code> priority 1.</div></div>
+          </div>
+        </div>
+
+        <div class="v-panel" id="v230">
+          <h3>v2.3.0 — 8 bugs fixed</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-12:</strong> <code>wp_safe_redirect()</code> silently blocked delivery to <code>claude.ai</code> — not on WordPress's allowed redirect hosts list. OAuth flow could never complete.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-13:</strong> <code>get_json_params()</code> returns <code>null</code> on missing/malformed body. Accessing <code>$body['id']</code> on null = PHP 8 TypeError, crashing the MCP handler on any malformed request.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-14/15/16:</strong> Inline JS handle not queued · log path traversal via <code>ini_get('error_log')</code> · token fallback always HTTP 200 even on errors (RFC 6749 §5.2 violation).</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-17/18/19:</strong> <code>strtok()</code> global state corruption · missing <code>Cache-Control/Pragma</code> on token fallback · <code>target="_blank"</code> link without <code>rel="noopener"</code>.</div></div>
+          </div>
+        </div>
+
+        <div class="v-panel" id="v210">
+          <h3>v2.1.0–v2.2.0 — OAuth + 10 core fixes</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-11:</strong> Full OAuth 2.1 authorization server implemented. Claude.ai requires <code>/.well-known/oauth-authorization-server</code> (RFC 8414) and the old-spec fallback <code>/authorize</code> and <code>/token</code> paths. Without these, every connection attempt 404'd.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-critical">CRITICAL</span>
+            <div><div class="bug-text"><strong>BUG-01–03:</strong> Missing GET handler (generic 404) · OPTIONS preflight blocked by auth callback · missing CORS headers blocked all Claude.ai responses.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-04–05:</strong> <code>post_count</code> always cast to 1 via stdClass · missing <code>wp_reset_postdata()</code> after WP_Query.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-06–08:</strong> API key stored with <code>autoload = true</code> · <code>date()</code> instead of <code>gmdate()</code> · <code>MCP-Protocol-Version</code> header only on initialize responses.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-logo">WP MCP <span>Bridge</span></div>
+    <div class="footer-links">
+      <a href="https://github.com/guramzhgamadze/WP-MCP-Bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="README.md">Documentation</a>
+      <a href="https://github.com/guramzhgamadze/WP-MCP-Bridge/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/guramzhgamadze/WP-MCP-Bridge/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="https://claude.ai" target="_blank" rel="noopener">Claude.ai</a>
+    </div>
+    <div class="footer-copy">
+      GPL v2 or later · Built for WordPress 5.8+ · PHP 8.0+ · MCP Spec 2025-06-18
+    </div>
+  </div>
+</footer>
+
+<script>
+  // ── Tab switcher ────────────────────────────────────────
+  function switchTab(id) {
+    document.querySelectorAll('.code-block').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  // ── Version switcher ────────────────────────────────────
+  function switchVersion(id) {
+    document.querySelectorAll('.v-panel').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.v-item').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  // ── Copy button ─────────────────────────────────────────
+  function copyCode(id) {
+    const el = document.getElementById(id);
+    const text = el.innerText.replace(/^Copy\n/, '');
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = el.querySelector('.copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 1800);
+    });
+  }
+
+  // ── Scroll reveal ───────────────────────────────────────
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('[data-reveal]').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
