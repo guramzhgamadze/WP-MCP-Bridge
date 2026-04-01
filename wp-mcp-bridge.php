@@ -3,7 +3,7 @@
  * Plugin Name:       WordPress MCP Bridge
  * Plugin URI:        https://github.com/your-repo/wp-mcp-bridge
  * Description:       Exposes your WordPress site to Claude.ai via the Model Context Protocol (MCP). Gives Claude read-only access to plugins, themes, post types, custom fields, database, source files, logs, hooks, and more — so it can write perfectly tailored plugins for your site.
- * Version:           2.7.0
+ * Version:           2.8.0
  * Requires at least: 5.8
  * Requires PHP:      8.0
  * Author:            Your Name
@@ -14,7 +14,80 @@
 
 /*
  * ============================================================
- * AUDIT v2.7.0  — 3 bugs found and fixed
+ * AUDIT v2.8.0  — 6 bugs fixed + 1 feature (configurable token TTL)
+ * ============================================================
+ *
+ * FEATURE: Configurable OAuth Token Lifetime (admin setting).
+ *   The token TTL was hardcoded to 3600s (1 hour) as a PHP constant,
+ *   making it impossible to change without editing plugin code.
+ *   Claude.ai re-authenticates whenever its token expires, which is
+ *   disruptive for long working sessions.
+ *   FIX: Admin setting with four choices (1h / 24h / 7d / 30d).
+ *        wp_mcp_bridge_get_token_ttl() reads from option, falls back to
+ *        WP_MCP_BRIDGE_OAUTH_TOKEN_TTL constant. "Revoke All OAuth Tokens"
+ *        button added to admin page for emergency invalidation.
+ *
+ * BUG-39 [HIGH] MCP protocol version 2025-11-25 not supported.
+ *   The plugin negotiates only '2025-06-18' and '2024-11-05'.
+ *   Anthropic released spec 2025-11-25 on 2025-11-25 as the new LATEST.
+ *   Claude.ai requests this version; the server always downgrades it to
+ *   '2025-06-18', which may cause future compatibility warnings.
+ *   Key changes in 2025-11-25 that affect this plugin:
+ *     - OAuth Client ID Metadata Documents (SHOULD support)
+ *     - WWW-Authenticate scope parameter (SHOULD include)
+ *     - Optional description field in serverInfo Implementation object
+ *     - WWW-Authenticate is now optional (well-known fallback sufficient)
+ *   Source: modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+ *   Source: modelcontextprotocol.io/specification/2025-11-25/changelog
+ *   FIX: Added '2025-11-25' to $supported array (highest priority).
+ *        Updated WP_MCP_BRIDGE_PROTO_VERSION default to '2025-11-25'.
+ *
+ * BUG-40 [MEDIUM] Authorization Server Metadata missing
+ *   client_id_metadata_document_supported field.
+ *   MCP spec 2025-11-25 §Client Registration: "Authorization servers and
+ *   MCP clients SHOULD support OAuth Client ID Metadata Documents.
+ *   Use client_id_metadata_document_supported in OAuth ASM to signal support."
+ *   Without this field, Claude.ai cannot determine whether to attempt
+ *   Client ID Metadata Documents before falling back to DCR.
+ *   Source: modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+ *   Source: tools.ietf.org/html/draft-ietf-oauth-client-id-metadata-document-00
+ *   FIX: Added 'client_id_metadata_document_supported' => false to ASM JSON.
+ *        Explicitly signals we use DCR not Client ID Metadata Documents.
+ *
+ * BUG-41 [MEDIUM] WWW-Authenticate 401 header missing scope parameter.
+ *   MCP spec 2025-11-25 §Protected Resource Metadata:
+ *   "MCP servers SHOULD include a scope parameter in the WWW-Authenticate
+ *    header as defined in RFC 6750 §3 to indicate the scopes required for
+ *    accessing the resource." (SEP-835 — incremental scope consent)
+ *   Without scope in the 401 challenge, Claude.ai cannot determine which
+ *   scope to request and must use the fallback scope selection strategy.
+ *   Source: modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+ *   Source: tools.ietf.org/html/rfc6750#section-3
+ *   FIX: Added scope="claudeai" to WWW-Authenticate header in cors filter.
+ *
+ * BUG-42 [MEDIUM] Consent page expiry warning shows wrong time units for
+ *   non-default TTLs (e.g. "1440 minutes" for a 24-hour token).
+ *   The text was: "Access expires in WP_MCP_BRIDGE_OAUTH_TOKEN_TTL/60 minutes."
+ *   With configurable TTLs: 86400/60 = "1440 minutes" — confusing and wrong.
+ *   FIX: New wp_mcp_bridge_format_ttl() helper formats as "1 hour", "24 hours",
+ *        "7 days", etc. Used on both the consent page and in the admin UI.
+ *
+ * BUG-43 [LOW] serverInfo in initialize response missing optional description.
+ *   MCP spec 2025-11-25 minor change #2: "Add optional description field to
+ *   Implementation interface to align with MCP registry server.json format and
+ *   provide human-readable context during initialization."
+ *   Source: modelcontextprotocol.io/specification/2025-11-25/changelog
+ *   FIX: Added 'description' field to serverInfo in initialize response.
+ *
+ * BUG-44 [LOW] wp_mcp_bridge_oauth_token_ttl option not added to the
+ *   activation hook — on fresh installs the option does not exist and
+ *   wp_mcp_bridge_get_token_ttl() falls back to the constant correctly,
+ *   but the radio button UI shows no selection. Also the option is not
+ *   in the blocked list for wp_get_options (it's not a credential, but
+ *   exposing internal config is unnecessary).
+ *   FIX: Added default option write in wp_mcp_bridge_activate().
+ *        Added 'wp_mcp_bridge_oauth_token_ttl' to the blocked list.
+ *
  * ============================================================
  *
  * BUG-36 [HIGH] wp_mcp_tool_db_schema(): esc_like() used without prepare()
@@ -431,15 +504,71 @@ if ( ! defined( 'ABSPATH' ) ) {
 // ============================================================
 // PLUGIN CONSTANTS
 // ============================================================
-define( 'WP_MCP_BRIDGE_VERSION',       '2.7.0' );
+define( 'WP_MCP_BRIDGE_VERSION',       '2.8.0' );
 define( 'WP_MCP_BRIDGE_DIR',           plugin_dir_path( __FILE__ ) );
 define( 'WP_MCP_BRIDGE_SLUG',          'wp-mcp-bridge' );
 define( 'WP_MCP_BRIDGE_OAUTH_CODE_TTL',  600  ); // auth code valid 10 min (RFC 6749 §4.1.2)
-define( 'WP_MCP_BRIDGE_OAUTH_TOKEN_TTL', 3600 ); // access token valid 1 hour
+define( 'WP_MCP_BRIDGE_OAUTH_TOKEN_TTL', 3600 ); // default access token TTL (1 hour); overridden by admin setting
 
-// Negotiated protocol version — set at initialize, used on all responses (BUG-08).
+// Negotiated protocol version — set at initialize, used on all responses.
+// Updated to 2025-11-25: the latest MCP spec (released 2025-11-25) adds
+// Client ID Metadata Documents, scope in WWW-Authenticate, and description in serverInfo.
+// Source: modelcontextprotocol.io/specification/2025-11-25/changelog
+// BUG-39 FIX: was '2025-06-18' — now the latest spec version is the default.
 if ( ! defined( 'WP_MCP_BRIDGE_PROTO_VERSION' ) ) {
-    define( 'WP_MCP_BRIDGE_PROTO_VERSION', '2025-06-18' );
+    define( 'WP_MCP_BRIDGE_PROTO_VERSION', '2025-11-25' );
+}
+
+// ============================================================
+// TOKEN TTL HELPERS  (FEATURE + BUG-42 + BUG-44 FIX)
+// ============================================================
+
+/**
+ * Returns the configured OAuth access token lifetime in seconds.
+ * Reads the admin-settable option; falls back to the constant default.
+ * Allowed values: 3600 (1h), 86400 (24h), 604800 (7d), 2592000 (30d).
+ * Static cache so the option is read once per request.
+ * Source: developer.wordpress.org/reference/functions/get_option/
+ */
+function wp_mcp_bridge_get_token_ttl(): int {
+    static $ttl = null;
+    if ( $ttl !== null ) {
+        return $ttl;
+    }
+    $allowed = [ 3600, 86400, 604800, 2592000 ];
+    $stored  = (int) get_option( 'wp_mcp_bridge_oauth_token_ttl', WP_MCP_BRIDGE_OAUTH_TOKEN_TTL );
+    $ttl     = in_array( $stored, $allowed, true ) ? $stored : WP_MCP_BRIDGE_OAUTH_TOKEN_TTL;
+    return $ttl;
+}
+
+/**
+ * Formats a TTL in seconds to a human-readable string.
+ * e.g. 3600 → "1 hour", 86400 → "24 hours", 604800 → "7 days".
+ * BUG-42 FIX: the old code did WP_MCP_BRIDGE_OAUTH_TOKEN_TTL / 60 which
+ * would show "1440 minutes" for a 24-hour token — confusing and wrong.
+ * Source: php.net/manual/en/function.intdiv.php
+ */
+function wp_mcp_bridge_format_ttl( int $seconds ): string {
+    $days  = intdiv( $seconds, 86400 );
+    $hours = intdiv( $seconds % 86400, 3600 );
+    if ( $days > 0 ) {
+        return $days  . ' day'  . ( $days  > 1 ? 's' : '' );
+    }
+    if ( $hours > 0 ) {
+        return $hours . ' hour' . ( $hours > 1 ? 's' : '' );
+    }
+    return intdiv( $seconds, 60 ) . ' minutes';
+}
+
+/**
+ * Sanitize callback for the token TTL admin setting.
+ * Accepts only the four allowed integer values; rejects anything else.
+ * Source: developer.wordpress.org/reference/functions/register_setting/
+ */
+function wp_mcp_bridge_sanitize_token_ttl( $value ): int {
+    $allowed = [ 3600, 86400, 604800, 2592000 ];
+    $value   = (int) $value;
+    return in_array( $value, $allowed, true ) ? $value : WP_MCP_BRIDGE_OAUTH_TOKEN_TTL;
 }
 
 // ============================================================
@@ -453,6 +582,11 @@ function wp_mcp_bridge_activate(): void {
         // BUG-06 FIX: autoload = false so key is only loaded on REST calls.
         // Source: developer.wordpress.org/reference/functions/update_option/
         update_option( 'wp_mcp_bridge_api_key', wp_generate_password( 48, false ), false );
+    }
+    // BUG-44 FIX: Set the default token TTL option on activation so the
+    // admin radio button UI has a pre-selected value on fresh installs.
+    if ( false === get_option( 'wp_mcp_bridge_oauth_token_ttl' ) ) {
+        update_option( 'wp_mcp_bridge_oauth_token_ttl', WP_MCP_BRIDGE_OAUTH_TOKEN_TTL, false );
     }
     flush_rewrite_rules();
 }
@@ -590,6 +724,15 @@ function wp_mcp_bridge_intercept_oauth_paths(): void {
             'code_challenge_methods_supported'      => [ 'S256' ],
             'token_endpoint_auth_methods_supported' => [ 'none' ],
             'scopes_supported'                      => [ 'claudeai' ],
+            // BUG-40 FIX: MCP spec 2025-11-25 §Client Registration requires servers
+            // to declare whether they support OAuth Client ID Metadata Documents via
+            // this field. Without it, Claude.ai cannot determine the registration method
+            // priority (Client ID Metadata Docs > DCR > user prompt).
+            // We do NOT support Client ID Metadata Documents (we use DCR via RFC 7591),
+            // so this is explicitly set to false to direct Claude.ai to use DCR instead.
+            // Source: modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+            // Source: tools.ietf.org/html/draft-ietf-oauth-client-id-metadata-document-00
+            'client_id_metadata_document_supported' => false,
         ] );
         exit;
     }
@@ -637,10 +780,15 @@ function wp_mcp_bridge_cors_headers( $served, $result, WP_REST_Request $request,
     header( 'Vary: Origin' );
 
     // BUG-11 FIX: WWW-Authenticate on 401 — tells Claude.ai where to find the OAuth server.
-    // Sources: RFC 9728 §5.1, modelcontextprotocol.io/specification/2025-06-18/basic/authorization
+    // BUG-41 FIX: MCP spec 2025-11-25 §Protected Resource Metadata:
+    //   "MCP servers SHOULD include a scope parameter in the WWW-Authenticate header
+    //    as defined in RFC 6750 §3 to indicate the scopes required for accessing the
+    //    resource." This enables incremental scope consent (SEP-835).
+    // Sources: RFC 9728 §5.1, RFC 6750 §3,
+    //   modelcontextprotocol.io/specification/2025-11-25/basic/authorization
     if ( $result instanceof WP_REST_Response && $result->get_status() === 401 ) {
         $meta_url = home_url( '/.well-known/oauth-protected-resource' );
-        header( 'WWW-Authenticate: Bearer realm="WordPress MCP Bridge", resource_metadata="' . esc_url( $meta_url ) . '"' );
+        header( 'WWW-Authenticate: Bearer realm="WordPress MCP Bridge", resource_metadata="' . esc_url( $meta_url ) . '", scope="claudeai"' );
     }
 
     return $served;
@@ -813,9 +961,14 @@ function wp_mcp_bridge_handle_request( WP_REST_Request $request ): WP_REST_Respo
     switch ( $method ) {
 
         case 'initialize':
-            $supported  = [ '2025-06-18', '2024-11-05' ];
-            $requested  = $params['protocolVersion'] ?? '2025-06-18';
-            $negotiated = in_array( $requested, $supported, true ) ? $requested : '2025-06-18';
+            // BUG-39 FIX: Added '2025-11-25' as the highest-priority supported version.
+            // MCP spec 2025-11-25 is the current latest (released 2025-11-25).
+            // Key additions: Client ID Metadata Documents, scope in WWW-Authenticate,
+            // optional description in serverInfo, incremental scope consent (SEP-835).
+            // Source: modelcontextprotocol.io/specification/2025-11-25/changelog
+            $supported  = [ '2025-11-25', '2025-06-18', '2024-11-05' ];
+            $requested  = $params['protocolVersion'] ?? '2025-11-25';
+            $negotiated = in_array( $requested, $supported, true ) ? $requested : '2025-11-25';
             return wp_mcp_ok_response( $id, [
                 'protocolVersion' => $negotiated,
                 'capabilities'    => [ 'tools' => [ 'listChanged' => false ] ],
@@ -823,6 +976,11 @@ function wp_mcp_bridge_handle_request( WP_REST_Request $request ): WP_REST_Respo
                     'name'    => 'wordpress-mcp-bridge',
                     'title'   => 'WordPress MCP Bridge',
                     'version' => WP_MCP_BRIDGE_VERSION,
+                    // BUG-43 FIX: MCP spec 2025-11-25 minor change #2 adds an optional
+                    // description field to the Implementation interface. Used by the MCP
+                    // registry and clients for human-readable context during initialization.
+                    // Source: modelcontextprotocol.io/specification/2025-11-25/changelog
+                    'description' => 'Read-only MCP server exposing WordPress site data — plugins, themes, database, source files, ACF fields, hooks, logs, and more.',
                 ],
                 'instructions' => 'WordPress MCP Bridge — gives Claude full read access to this WordPress site including plugins, themes, post types, database, source code, logs, hooks, and more.',
             ], $negotiated );
@@ -1337,7 +1495,13 @@ function wp_mcp_bridge_run_oauth_authorize_core(
 
   <p class="warning">
     ⚠ Read-only access only. Do not authorize on untrusted devices.<br>
-    Access expires in <?php echo WP_MCP_BRIDGE_OAUTH_TOKEN_TTL / 60; ?> minutes.
+    <?php
+    // BUG-42 FIX: Use wp_mcp_bridge_format_ttl() so the time unit is correct
+    // regardless of the configured TTL (was: always showed "N minutes", which
+    // would say "1440 minutes" for a 24-hour token — confusing and incorrect).
+    $ttl = wp_mcp_bridge_get_token_ttl();
+    echo esc_html( 'Access expires in ' . wp_mcp_bridge_format_ttl( $ttl ) . '.' );
+    ?>
   </p>
 </div>
 </body>
@@ -1444,9 +1608,11 @@ function wp_mcp_bridge_run_oauth_token(
         return $err( 'invalid_grant', 'PKCE code_verifier does not match code_challenge.' );
     }
 
-    // Issue access token.
+    // Issue access token using the admin-configured TTL (FEATURE).
+    // wp_mcp_bridge_get_token_ttl() reads the option and validates it;
+    // falls back to WP_MCP_BRIDGE_OAUTH_TOKEN_TTL (3600s) if unset.
     $access_token = wp_generate_password( 48, false );
-    $ttl          = WP_MCP_BRIDGE_OAUTH_TOKEN_TTL;
+    $ttl          = wp_mcp_bridge_get_token_ttl();
     set_transient( 'wpmcp_token_' . $access_token, [
         'client_id' => $stored['client_id'],
         'scope'     => $stored['scope'],
@@ -1686,6 +1852,9 @@ function wp_mcp_tool_options( array $args ): array {
         // Source: developer.wordpress.org/reference/functions/get_option/
         'wp_mcp_bridge_api_key',
         'wp_mcp_bridge_oauth_redirect_uris',
+        // BUG-44 FIX: Block the token TTL setting too — no reason to expose
+        // internal plugin configuration to an MCP session.
+        'wp_mcp_bridge_oauth_token_ttl',
     ];
     $defaults = [
         'siteurl', 'blogname', 'blogdescription', 'admin_email', 'blogpublic',
@@ -2152,6 +2321,41 @@ function wp_mcp_tool_rest_routes(): array {
 // ADMIN SETTINGS PAGE
 // Source: developer.wordpress.org/plugins/settings/settings-api/
 // ============================================================
+// ============================================================
+// REVOKE ALL OAUTH TOKENS (FEATURE)
+// Allows admins to immediately invalidate all active OAuth sessions.
+// Hooked to admin_post so it runs before output, can redirect cleanly.
+// Source: developer.wordpress.org/reference/hooks/admin_post__action/
+// ============================================================
+add_action( 'admin_post_wp_mcp_bridge_revoke_tokens', 'wp_mcp_bridge_handle_revoke_tokens' );
+
+function wp_mcp_bridge_handle_revoke_tokens(): void {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'Insufficient permissions.', 'wp-mcp-bridge' ), 403 );
+    }
+    // Verify nonce before any action.
+    // Source: developer.wordpress.org/reference/functions/check_admin_referer/
+    check_admin_referer( 'wp_mcp_bridge_revoke_tokens' );
+
+    global $wpdb;
+    // Delete all active OAuth access token transients (wpmcp_token_*).
+    // Also delete OAuth auth code transients (wpmcp_code_*) for completeness.
+    // The rate-limit transients (wpmcp_rate_*) are left — they expire naturally.
+    $wpdb->query(
+        "DELETE FROM {$wpdb->options}
+         WHERE option_name LIKE '_transient_wpmcp_token_%'
+            OR option_name LIKE '_transient_timeout_wpmcp_token_%'
+            OR option_name LIKE '_transient_wpmcp_code_%'
+            OR option_name LIKE '_transient_timeout_wpmcp_code_%'"
+    );
+
+    wp_safe_redirect( add_query_arg(
+        [ 'page' => 'wp-mcp-bridge', 'revoked' => '1' ],
+        admin_url( 'options-general.php' )
+    ) );
+    exit;
+}
+
 add_action( 'admin_menu',        'wp_mcp_bridge_admin_menu' );
 add_action( 'admin_init',        'wp_mcp_bridge_admin_settings' );
 // BUG-29 FIX: register_setting() must be called on both admin_init AND rest_api_init.
@@ -2175,6 +2379,12 @@ function wp_mcp_bridge_admin_settings(): void {
     register_setting( 'wp_mcp_bridge_options', 'wp_mcp_bridge_oauth_redirect_uris', [
         'type'              => 'string',
         'sanitize_callback' => 'sanitize_textarea_field',
+    ] );
+    // FEATURE: Configurable OAuth token lifetime.
+    // Source: developer.wordpress.org/reference/functions/register_setting/
+    register_setting( 'wp_mcp_bridge_options', 'wp_mcp_bridge_oauth_token_ttl', [
+        'type'              => 'integer',
+        'sanitize_callback' => 'wp_mcp_bridge_sanitize_token_ttl',
     ] );
 }
 
@@ -2257,6 +2467,38 @@ function wp_mcp_bridge_settings_page(): void {
                 </tr>
             </table>
 
+            <h2>OAuth Token Lifetime</h2>
+            <p>Controls how long an OAuth access token stays valid before Claude.ai must re-authenticate.
+               Longer sessions are more convenient; shorter sessions reduce exposure if a token is leaked.
+               <strong>Bearer Token auth is unaffected — it never expires.</strong></p>
+            <table class="form-table">
+                <tr>
+                    <th>Token Duration</th>
+                    <td>
+                        <?php
+                        $current_ttl = wp_mcp_bridge_get_token_ttl();
+                        $ttl_options = [
+                            3600    => '1 hour — most secure (default)',
+                            86400   => '24 hours',
+                            604800  => '7 days',
+                            2592000 => '30 days — most convenient',
+                        ];
+                        foreach ( $ttl_options as $val => $label ) : ?>
+                        <label style="display:block;margin-bottom:6px">
+                            <input type="radio" name="wp_mcp_bridge_oauth_token_ttl"
+                                   value="<?php echo esc_attr( $val ); ?>"
+                                   <?php checked( $current_ttl, $val ); ?>>
+                            <?php echo esc_html( $label ); ?>
+                        </label>
+                        <?php endforeach; ?>
+                        <p class="description">
+                            Currently: <strong><?php echo esc_html( wp_mcp_bridge_format_ttl( $current_ttl ) ); ?></strong>.
+                            Changes apply to new tokens only — existing tokens keep their original expiry.
+                        </p>
+                    </td>
+                </tr>
+            </table>
+
             <h2>Extra OAuth Redirect URIs (optional)</h2>
             <table class="form-table">
                 <tr>
@@ -2272,13 +2514,30 @@ function wp_mcp_bridge_settings_page(): void {
             <?php submit_button( 'Save Settings' ); ?>
         </form>
 
+        <?php
+        // Build revoke URL with nonce.
+        $revoke_url = wp_nonce_url(
+            add_query_arg( [ 'page' => 'wp-mcp-bridge', 'action' => 'revoke_tokens' ], admin_url( 'options-general.php' ) ),
+            'wp_mcp_bridge_revoke_tokens'
+        );
+        ?>
+        <h2>Revoke All OAuth Tokens</h2>
+        <p>Immediately invalidates every active OAuth access token. Claude.ai will need to complete the OAuth flow again. Use this if you suspect a token has been leaked or you want to force re-authentication on all connected clients.</p>
+        <p>
+            <a href="<?php echo esc_url( $revoke_url ); ?>"
+               class="button button-secondary"
+               onclick="return confirm('Revoke all active OAuth tokens now? Claude.ai will need to re-authenticate.');">
+                ⚠ Revoke All OAuth Tokens
+            </a>
+        </p>
+
         <h2>Setup Guide — Option A: Bearer Token (Simplest)</h2>
         <ol>
             <li>Go to <a href="https://claude.ai" target="_blank" rel="noopener noreferrer">claude.ai</a> → Profile → <strong>Settings</strong> → <strong>Connectors</strong> → <strong>Add custom connector</strong>.</li>
             <li>Paste the <strong>MCP Endpoint</strong> URL above.</li>
             <li>Set auth type to <strong>Bearer Token</strong> (or <strong>API Key</strong>).</li>
             <li>Paste the <strong>Bearer Token</strong> value from the API Key field above.</li>
-            <li>Save — Claude.ai can now connect immediately.</li>
+            <li>Save — Claude.ai connects immediately. Bearer tokens never expire.</li>
         </ol>
 
         <h2>Setup Guide — Option B: OAuth 2.1 (used when Claude.ai shows a login screen)</h2>
@@ -2292,6 +2551,7 @@ function wp_mcp_bridge_settings_page(): void {
                 &nbsp;• <strong>Scopes</strong>: <code>claudeai</code></li>
             <li>Claude.ai will open a browser window to this site's authorization page.</li>
             <li>Log in to WordPress as an administrator and click <strong>Allow Access</strong>.</li>
+            <li>The token will stay valid for <strong><?php echo esc_html( wp_mcp_bridge_format_ttl( wp_mcp_bridge_get_token_ttl() ) ); ?></strong> (configurable above).</li>
         </ol>
 
         <h2>Troubleshooting: 404 / "rest_no_route"</h2>
@@ -2302,7 +2562,7 @@ function wp_mcp_bridge_settings_page(): void {
                 <code>curl -s -X POST <?php echo esc_html( $endpoint_url ); ?> \<br>
                 &nbsp;&nbsp;-H "Authorization: Bearer <?php echo esc_html( $api_key ); ?>" \<br>
                 &nbsp;&nbsp;-H "Content-Type: application/json" \<br>
-                &nbsp;&nbsp;-d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'</code></li>
+                &nbsp;&nbsp;-d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}'</code></li>
             <li>Test OAuth discovery: <code>curl <?php echo esc_html( $well_known_asm_url ); ?></code></li>
             <li>A successful initialize response starts with: <code>{"jsonrpc":"2.0","id":1,"result":{...</code></li>
         </ol>

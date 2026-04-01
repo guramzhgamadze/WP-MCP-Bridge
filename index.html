@@ -526,7 +526,7 @@
   <div class="container">
     <div class="hero-badge">
       <span class="dot"></span>
-      v2.6.0 · MCP Spec 2025-06-18 · OAuth 2.1 PKCE
+      v2.8.0 · MCP Spec 2025-11-25 · OAuth 2.1 PKCE
     </div>
     <h1>WordPress meets<br><span>Claude.ai</span></h1>
     <p class="hero-sub">
@@ -557,12 +557,12 @@
         <div class="terminal-body">
           <div><span class="prompt">$</span> <span class="cmd">curl -X POST https://your-site.com/wp-json/mcp/v1/bridge \</span></div>
           <div><span class="key">&nbsp;&nbsp;-H</span> <span class="val">"Authorization: Bearer &lt;token&gt;"</span> <span class="key">-H</span> <span class="val">"Content-Type: application/json"</span> <span class="key">\</span></div>
-          <div><span class="key">&nbsp;&nbsp;-d</span> <span class="val">'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'</span></div>
+          <div><span class="key">&nbsp;&nbsp;-d</span> <span class="val">'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}'</span></div>
           <div>&nbsp;</div>
-          <div class="comment"># ✓ 200 OK · MCP-Protocol-Version: 2025-06-18</div>
+          <div class="comment"># ✓ 200 OK · MCP-Protocol-Version: 2025-11-25</div>
           <div><span class="key">{</span> <span class="str">"jsonrpc"</span>: <span class="val">"2.0"</span>, <span class="str">"id"</span>: <span class="val">1</span>, <span class="str">"result"</span>: <span class="key">{</span></div>
-          <div>&nbsp;&nbsp;<span class="str">"protocolVersion"</span>: <span class="val">"2025-06-18"</span>,</div>
-          <div>&nbsp;&nbsp;<span class="str">"serverInfo"</span>: <span class="key">{ </span><span class="str">"name"</span>: <span class="val">"wordpress-mcp-bridge"</span>, <span class="str">"version"</span>: <span class="val">"2.6.0"</span> <span class="key">}</span>,</div>
+          <div>&nbsp;&nbsp;<span class="str">"protocolVersion"</span>: <span class="val">"2025-11-25"</span>,</div>
+          <div>&nbsp;&nbsp;<span class="str">"serverInfo"</span>: <span class="key">{ </span><span class="str">"name"</span>: <span class="val">"wordpress-mcp-bridge"</span>, <span class="str">"version"</span>: <span class="val">"2.8.0"</span> <span class="key">}</span>,</div>
           <div>&nbsp;&nbsp;<span class="str">"capabilities"</span>: <span class="key">{ </span><span class="str">"tools"</span>: <span class="key">{ </span><span class="str">"listChanged"</span>: <span class="val">false</span> <span class="key">} }</span></div>
           <div><span class="key">}}</span></div>
           <div>&nbsp;</div>
@@ -582,7 +582,7 @@
         <div class="stat-label">MCP Tools</div>
       </div>
       <div class="stat" data-reveal style="transition-delay:.08s">
-        <div class="stat-num">35+</div>
+        <div class="stat-num">44+</div>
         <div class="stat-label">Bugs Fixed</div>
       </div>
       <div class="stat" data-reveal style="transition-delay:.16s">
@@ -751,10 +751,12 @@
         <ul>
           <li>Tokens validated with <code>hash_equals()</code> — no timing attacks</li>
           <li>API key stored with <code>autoload = false</code></li>
-          <li>OAuth access tokens expire after 1 hour</li>
+          <li>OAuth token lifetime configurable: 1h / 24h / 7d / 30d (admin setting)</li>
+          <li>Bearer Token auth never expires — only OAuth tokens are time-limited</li>
           <li>Auth codes are single-use, expire in 10 minutes</li>
           <li>PKCE S256 mandatory — plain challenges rejected</li>
-          <li>Bearer token blocked from <code>wp_get_options</code> tool</li>
+          <li>Bearer token and plugin config blocked from <code>wp_get_options</code> tool</li>
+          <li>"Revoke All OAuth Tokens" button for emergency invalidation</li>
         </ul>
       </div>
       <div class="sec-card" data-reveal style="transition-delay:.1s">
@@ -934,8 +936,16 @@
     </div>
     <div class="changelog" data-reveal>
       <div class="changelog-versions">
-        <div class="v-item active" onclick="switchVersion('v260')">
-          <div class="v-num">v2.6.0 <span class="v-badge">LATEST</span></div>
+        <div class="v-item active" onclick="switchVersion('v280')">
+          <div class="v-num">v2.8.0 <span class="v-badge">LATEST</span></div>
+          <div class="v-date">Apr 2026</div>
+        </div>
+        <div class="v-item" onclick="switchVersion('v270')">
+          <div class="v-num">v2.7.0</div>
+          <div class="v-date">Apr 2026</div>
+        </div>
+        <div class="v-item" onclick="switchVersion('v260')">
+          <div class="v-num">v2.6.0</div>
           <div class="v-date">Mar 2026</div>
         </div>
         <div class="v-item" onclick="switchVersion('v250')">
@@ -957,7 +967,55 @@
       </div>
       <div class="changelog-content">
 
-        <div class="v-panel active" id="v260">
+        <div class="v-panel active" id="v280">
+          <h3>v2.8.0 — 6 bugs fixed + configurable token lifetime</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-39:</strong> MCP protocol version <code>2025-11-25</code> (the latest spec) not in the supported list — Claude.ai's version request was always downgraded to <code>2025-06-18</code>. Now the highest-priority supported version, with all 2025-11-25 additions implemented.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-40:</strong> Authorization Server Metadata missing <code>client_id_metadata_document_supported</code> field. MCP spec 2025-11-25 requires this so clients know to use DCR rather than Client ID Metadata Documents. Now explicitly set to <code>false</code>.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-41:</strong> <code>WWW-Authenticate</code> 401 header missing <code>scope</code> parameter. MCP spec 2025-11-25 §Protected Resource Metadata (SEP-835) requires it for incremental scope consent. Now sends <code>scope="claudeai"</code>.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-42:</strong> Consent page expiry showed "1440 minutes" for a 24-hour token. New <code>wp_mcp_bridge_format_ttl()</code> helper formats correctly as "24 hours", "7 days", etc. across all configurable durations.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-low">LOW</span>
+            <div><div class="bug-text"><strong>BUG-43:</strong> <code>serverInfo</code> in <code>initialize</code> response missing optional <code>description</code> field added by MCP spec 2025-11-25 to align with the MCP registry server.json format.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-low">LOW</span>
+            <div><div class="bug-text"><strong>BUG-44:</strong> Token TTL option not written on fresh activation — admin radio buttons had no pre-selected value. Option also now blocked from <code>wp_get_options</code> tool to avoid exposing internal config.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev" style="background:rgba(77,159,255,.15);color:#4d9fff;border:1px solid rgba(77,159,255,.25);font-family:var(--font-mono);font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;white-space:nowrap;margin-top:2px;flex-shrink:0">FEATURE</span>
+            <div><div class="bug-text"><strong>Configurable OAuth Token Lifetime.</strong> Choose 1 hour, 24 hours, 7 days, or 30 days from Settings → MCP Bridge. Bearer Token auth is unaffected (never expires). Emergency "Revoke All OAuth Tokens" button added for instant invalidation.</div></div>
+          </div>
+        </div>
+
+        <div class="v-panel" id="v270">
+          <h3>v2.7.0 — 3 bugs fixed</h3>
+          <div class="bug-item">
+            <span class="bug-sev sev-high">HIGH</span>
+            <div><div class="bug-text"><strong>BUG-36:</strong> SQL injection in <code>wp_mcp_tool_db_schema()</code> — <code>$wpdb->esc_like()</code> was used without <code>$wpdb->prepare()</code>. WordPress docs are explicit: "You must use prepare() in conjunction with esc_like()." A crafted <code>table</code> filter argument could escape the SQL string context.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-medium">MEDIUM</span>
+            <div><div class="bug-text"><strong>BUG-37:</strong> OAuth consent nonce sanitized with <code>sanitize_text_field()</code> instead of the canonical <code>sanitize_key()</code>. The wrong sanitizer strips HTML entities which can corrupt nonce values on certain hosting configs with magic quotes enabled.</div></div>
+          </div>
+          <div class="bug-item">
+            <span class="bug-sev sev-low">LOW</span>
+            <div><div class="bug-text"><strong>BUG-38:</strong> Cut-paste artifact in v2.6.0 audit header left BUG-31 through BUG-34 described twice with a bare uncommented blank line between them, breaking PHP block-comment structure and flagging linters.</div></div>
+          </div>
+        </div>
+
+        <div class="v-panel" id="v260">
           <h3>v2.6.0 — 5 bugs fixed</h3>
           <div class="bug-item">
             <span class="bug-sev sev-critical">CRITICAL</span>
@@ -1099,7 +1157,7 @@
       <a href="https://claude.ai" target="_blank" rel="noopener">Claude.ai</a>
     </div>
     <div class="footer-copy">
-      GPL v2 or later · Built for WordPress 5.8+ · PHP 8.0+ · MCP Spec 2025-06-18
+      GPL v2 or later · Built for WordPress 5.8+ · PHP 8.0+ · MCP Spec 2025-11-25
     </div>
   </div>
 </footer>

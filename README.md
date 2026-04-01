@@ -2,7 +2,7 @@
 
 > Connect your WordPress site to Claude.ai via the Model Context Protocol (MCP) — giving Claude read-only access to your plugins, themes, post types, custom fields, database, source files, logs, hooks, and more.
 
-![Version](https://img.shields.io/badge/version-2.6.0-blue)
+![Version](https://img.shields.io/badge/version-2.8.0-blue)
 ![WordPress](https://img.shields.io/badge/WordPress-5.8%2B-21759b)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb3)
 ![License](https://img.shields.io/badge/license-GPL--2.0-green)
@@ -20,8 +20,10 @@ WordPress MCP Bridge turns your WordPress site into an MCP server that Claude.ai
 ## Features
 
 - **Full OAuth 2.1 authorization server** with PKCE (S256), dynamic client registration (RFC 7591), and auto-discovery endpoints (RFC 8414 + RFC 9728)
-- **Bearer Token auth** as a simpler alternative to OAuth
+- **Bearer Token auth** as a simpler alternative to OAuth — never expires
+- **Configurable OAuth token lifetime** — 1 hour, 24 hours, 7 days, or 30 days, switchable from the admin settings page. Emergency "Revoke All" button for instant invalidation.
 - **19 MCP tools** covering every major aspect of a WordPress site
+- **MCP spec 2025-11-25 compliant** — the latest specification, including `client_id_metadata_document_supported`, scope in `WWW-Authenticate`, and `description` in `serverInfo`
 - **Rate limiting** — 120 tool calls per minute per IP
 - **Security hardened** — path traversal guards, credential redaction, single-use auth codes, clickjacking protection, and more
 - **Apache + FastCGI compatible** — Authorization header normalization built in
@@ -128,8 +130,12 @@ Claude.ai will open a browser window to your WordPress site, where you log in as
 ### Authentication
 - Bearer tokens are stored with `autoload = false` — never loaded on regular page requests
 - Tokens are validated with `hash_equals()` to prevent timing attacks
-- OAuth access tokens expire after **1 hour**; authorization codes expire after **10 minutes**
-- Authorization codes are **single-use** — deleted immediately on redemption
+- **OAuth token lifetime is configurable** — 1 hour (default), 24 hours, 7 days, or 30 days (Settings → MCP Bridge → Token Duration)
+- Bearer Token auth **never expires** — only OAuth access tokens are time-limited
+- Authorization codes expire after **10 minutes** and are **single-use** — deleted immediately on redemption
+- PKCE S256 is **mandatory** — plain code challenges are rejected
+- Bearer token and plugin config options are blocked from the `wp_get_options` tool
+- **"Revoke All OAuth Tokens"** button on the admin page for immediate emergency invalidation
 
 ### Authorization
 - Only WordPress administrators (`manage_options`) can grant OAuth consent
@@ -190,7 +196,7 @@ Claude.ai                     Your WordPress Site
    curl -s -X POST https://your-site.com/wp-json/mcp/v1/bridge \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}'
    ```
    A working response starts with: `{"jsonrpc":"2.0","id":1,"result":{...`
 
@@ -218,6 +224,21 @@ Then check `wp-content/debug.log` or use the `wp_get_logs` MCP tool.
 ---
 
 ## Changelog
+
+### v2.8.0
+- **Feature** Configurable OAuth token lifetime — 1 hour, 24 hours, 7 days, or 30 days (Settings → MCP Bridge → Token Duration). Bearer Token auth is unaffected.
+- **Feature** "Revoke All OAuth Tokens" button on the admin settings page for emergency invalidation.
+- **Fix [HIGH]** BUG-39: MCP protocol version `2025-11-25` (latest spec, released 2025-11-25) not in the supported list — Claude.ai's version was always downgraded. Now the highest-priority supported version.
+- **Fix [MEDIUM]** BUG-40: Authorization Server Metadata missing `client_id_metadata_document_supported` field — MCP spec 2025-11-25 requires this so clients know to use DCR, not Client ID Metadata Documents.
+- **Fix [MEDIUM]** BUG-41: `WWW-Authenticate` 401 header missing `scope` parameter — MCP spec 2025-11-25 §Protected Resource Metadata (SEP-835) requires it for incremental scope consent.
+- **Fix [MEDIUM]** BUG-42: Consent page expiry showed "1440 minutes" for a 24-hour token. New `wp_mcp_bridge_format_ttl()` helper displays "24 hours", "7 days", etc.
+- **Fix [LOW]** BUG-43: `serverInfo` in `initialize` response missing optional `description` field added by MCP spec 2025-11-25.
+- **Fix [LOW]** BUG-44: Token TTL option not written on activation — admin radio buttons had no pre-selected value on fresh installs. TTL option now blocked from `wp_get_options` tool.
+
+### v2.7.0
+- **Fix [HIGH]** BUG-36: SQL injection in `wp_mcp_tool_db_schema()` — `esc_like()` used without `prepare()`. WordPress docs require both.
+- **Fix [MEDIUM]** BUG-37: OAuth consent nonce sanitized with `sanitize_text_field()` instead of canonical `sanitize_key()`.
+- **Fix [LOW]** BUG-38: Duplicate comment block in v2.6.0 audit header left a bare uncommented line, breaking block-comment structure.
 
 ### v2.6.0
 - **Fix [CRITICAL]** BUG-35: `rest_cookie_invalid_nonce` 403 on "Allow Access" — two-nonce form approach
