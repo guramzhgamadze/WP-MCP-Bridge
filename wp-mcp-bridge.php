@@ -1,12 +1,12 @@
 <?php
 /**
  * Plugin Name:       WordPress MCP Bridge
- * Plugin URI:        https://github.com/guramzhgamadze/WP-MCP-Bridge
+ * Plugin URI:        https://github.com/your-repo/wp-mcp-bridge
  * Description:       Exposes your WordPress site to Claude.ai via the Model Context Protocol (MCP). Gives Claude read-only access to plugins, themes, post types, custom fields, database, source files, logs, hooks, and more — so it can write perfectly tailored plugins for your site.
- * Version:           2.6.0
+ * Version:           2.7.0
  * Requires at least: 5.8
  * Requires PHP:      8.0
- * Author:            Guram Zhgamadze
+ * Author:            Your Name
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       wp-mcp-bridge
@@ -14,7 +14,42 @@
 
 /*
  * ============================================================
- * AUDIT v2.6.0  — 5 bugs found and fixed
+ * AUDIT v2.7.0  — 3 bugs found and fixed
+ * ============================================================
+ *
+ * BUG-36 [HIGH] wp_mcp_tool_db_schema(): esc_like() used without prepare()
+ *   — SQL injection vector in the SHOW TABLES LIKE query.
+ *   WordPress documentation for $wpdb->esc_like() explicitly states:
+ *   "You must use $wpdb->prepare() in conjunction with esc_like() to protect
+ *    the query from SQL injection."
+ *   Without prepare(), esc_like() only escapes LIKE metacharacters (%, _)
+ *   but does NOT protect against quote injection. A malicious filter value
+ *   such as "' OR 1=1 --" could escape the LIKE string context.
+ *   Source: developer.wordpress.org/reference/classes/wpdb/esc_like/
+ *   FIX: Wrap the query in $wpdb->prepare() using %s placeholder:
+ *        $wpdb->prepare( "SHOW TABLES LIKE %s", '%' . $wpdb->esc_like($filter) . '%' )
+ *
+ * BUG-37 [MEDIUM] OAuth consent form: nonce sanitized with sanitize_text_field()
+ *   instead of the canonical sanitize_key().
+ *   WordPress PHP coding standards and the WPCS Sniff wiki both specify that
+ *   sanitize_key() is the canonical sanitizer for nonces — it strips slashes
+ *   automatically (unlike sanitize_text_field which requires wp_unslash() first)
+ *   and does not alter or strip characters that can appear in a WP nonce.
+ *   sanitize_text_field() strips HTML tags and converts entities, which can
+ *   corrupt a nonce value on hosts with magic quotes or unusual charset configs.
+ *   Source: developer.wordpress.org/reference/functions/sanitize_key/
+ *   FIX: Changed sanitize_text_field( $_POST['_mcp_nonce'] ?? '' )
+ *             → sanitize_key( $_POST['_mcp_nonce'] ?? '' )
+ *
+ * BUG-38 [LOW] Duplicate comment block in v2.6.0 audit header — cut-paste
+ *   artifact left BUG-31/32/33/34 described twice: once briefly, once in full,
+ *   with a bare (non-commented) blank line between them that technically broke
+ *   the PHP block-comment structure (legal but confusing and flags linters).
+ *   FIX: Merged both descriptions into one clean entry per bug, removed the
+ *        orphaned blank line, and corrected comment formatting.
+ *
+ * ============================================================
+ * AUDIT v2.6.0  — 5 bugs found and fixed (carried forward)
  * ============================================================
  *
  * BUG-35 [CRITICAL] rest_cookie_invalid_nonce (403) when clicking "Allow Access".
@@ -36,29 +71,6 @@
  *   wp_mcp_tool_options() blocked WordPress security keys but NOT the plugin's
  *   own option keys. An authenticated Claude session could call the tool with
  *   keys:['wp_mcp_bridge_api_key'] and receive the very Bearer token it used
- *   to authenticate — silently exfiltrating the credential.
- *   Source: developer.wordpress.org/reference/functions/get_option/
- *   FIX: Added 'wp_mcp_bridge_api_key' and 'wp_mcp_bridge_oauth_redirect_uris'
- *        to the $blocked list in wp_mcp_tool_options().
- *
- * BUG-32 [HIGH] _get_cron_array() returns false on corrupt/missing cron data —
- *   foreach(false) emits E_WARNING on PHP 8.0/8.1 and throws TypeError on
- *   PHP 8.2+, crashing the wp_get_cron_jobs tool entirely.
- *   Source: developer.wordpress.org/plugins/cron/simple-testing/
- *   FIX: $cron = _get_cron_array() ?: []; normalises false to empty array.
- *
- * BUG-33 [MEDIUM] Unused $resp_types variable in DCR handler — PHP notice.
- *   FIX: Removed the unused assignment; added explanatory comment.
- *
- * BUG-34 [LOW] No transient cleanup on plugin deactivation — orphaned DB rows.
- *   WordPress plugin handbook: clean up after yourself on deactivation.
- *   Source: developer.wordpress.org/plugins/cron/scheduling-wp-cron-events/
- *   FIX: Added $wpdb DELETE in wp_mcp_bridge_deactivate() for wpmcp_ transients.
- *
-
- *   wp_mcp_tool_options() blocked WordPress security keys but NOT the plugin's
- *   own option keys. An authenticated Claude session could call the tool with
- *   keys:['wp_mcp_bridge_api_key'] and receive the very Bearer token it used
  *   to authenticate — silently exfiltrating the credential to Claude's context,
  *   log, or any MCP consumer.
  *   Source: developer.wordpress.org/reference/functions/get_option/
@@ -70,7 +82,7 @@
  *   PHP 8.2+, crashing the wp_get_cron_jobs tool entirely.
  *   _get_cron_array() returns false when the 'cron' option is not an array
  *   (e.g., fresh install, malformed option, filtered to false). WordPress core
- *   itself guards against this return value in wp_clear_scheduled_hook() and
+ *   itself guards against this in wp_clear_scheduled_hook() and
  *   wp_schedule_single_event() with empty($crons) checks.
  *   Source: developer.wordpress.org/plugins/cron/simple-testing/
  *   Source: developer.wordpress.org/reference/functions/_get_cron_array/
@@ -419,7 +431,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // ============================================================
 // PLUGIN CONSTANTS
 // ============================================================
-define( 'WP_MCP_BRIDGE_VERSION',       '2.6.0' );
+define( 'WP_MCP_BRIDGE_VERSION',       '2.7.0' );
 define( 'WP_MCP_BRIDGE_DIR',           plugin_dir_path( __FILE__ ) );
 define( 'WP_MCP_BRIDGE_SLUG',          'wp-mcp-bridge' );
 define( 'WP_MCP_BRIDGE_OAUTH_CODE_TTL',  600  ); // auth code valid 10 min (RFC 6749 §4.1.2)
@@ -1146,7 +1158,12 @@ function wp_mcp_bridge_run_oauth_authorize_core(
         //
         // Source: wp-includes/class-wp-rest-server.php §REST_COOKIE_AUTH
         // Source: developer.wordpress.org/rest-api/using-the-rest-api/authentication/
-        $nonce  = sanitize_text_field( $_POST['_mcp_nonce'] ?? '' );
+        // BUG-37 FIX: Use sanitize_key() — the canonical WordPress sanitizer for nonces.
+        // sanitize_text_field() strips HTML and converts entities which can corrupt nonce
+        // values on hosts with magic quotes or unusual charset configs. sanitize_key()
+        // strips slashes automatically (no wp_unslash() needed) and is WPCS-canonical.
+        // Source: developer.wordpress.org/reference/functions/sanitize_key/
+        $nonce  = sanitize_key( $_POST['_mcp_nonce'] ?? '' );
         $action = sanitize_text_field( $_POST['consent_action'] ?? '' );
 
         if ( ! wp_verify_nonce( $nonce, 'wp_mcp_oauth_consent' ) ) {
@@ -1756,8 +1773,14 @@ function wp_mcp_tool_query_posts( array $args ): array {
 function wp_mcp_tool_db_schema( array $args ): array {
     global $wpdb;
     $filter = $args['table'] ?? '';
+    // BUG-36 FIX: esc_like() MUST be combined with prepare() — it only escapes
+    // LIKE metacharacters (% and _) but does NOT protect against quote injection.
+    // Without prepare(), a value like "' OR 1=1 -- " can escape the string context.
+    // Source: developer.wordpress.org/reference/classes/wpdb/esc_like/
+    //   "You must use $wpdb->prepare() in conjunction with esc_like() to protect
+    //    the query from SQL injection."
     $tables = $filter
-        ? $wpdb->get_col( "SHOW TABLES LIKE '%" . $wpdb->esc_like( $filter ) . "%'" )
+        ? $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', '%' . $wpdb->esc_like( $filter ) . '%' ) )
         : $wpdb->get_col( 'SHOW TABLES' );
     $schema = [];
     foreach ( $tables as $tbl ) {
