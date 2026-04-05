@@ -1,12 +1,12 @@
 <?php
 /**
  * Plugin Name:       WordPress MCP Bridge
- * Plugin URI:        https://github.com/your-repo/wp-mcp-bridge
+ * Plugin URI:        https://github.com/guramzhgamadze/WP-MCP-Bridge
  * Description:       Exposes your WordPress site to Claude.ai via the Model Context Protocol (MCP). Gives Claude read-only access to plugins, themes, post types, custom fields, database, source files, logs, hooks, and more — so it can write perfectly tailored plugins for your site.
  * Version:           2.8.0
  * Requires at least: 5.8
  * Requires PHP:      8.0
- * Author:            Your Name
+ * Author:            Guram Zhgamadze
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       wp-mcp-bridge
